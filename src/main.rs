@@ -15,7 +15,7 @@ use softbuffer::{Context, Surface};
 
 use winit::application::ApplicationHandler;
 use winit::dpi::{LogicalSize, PhysicalPosition, PhysicalSize};
-use winit::event::{DeviceEvent, DeviceId, Ime, MouseButton, MouseScrollDelta, WindowEvent};
+use winit::event::{DeviceEvent, DeviceId, Ime, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::keyboard::{Key, ModifiersState};
 use winit::window::{
@@ -89,7 +89,7 @@ impl Application {
         #[cfg(not(any(android_platform, ios_platform)))]
         let context = Some(
             Context::new(unsafe {
-                std::mem::transmute::<DisplayHandle<'_>, DisplayHandle<'static>>(
+                mem::transmute::<DisplayHandle<'_>, DisplayHandle<'static>>(
                     event_loop.display_handle().unwrap(),
                 )
             })
@@ -267,20 +267,10 @@ impl Application {
         }
     }
 
-    /// Process the key binding.
     fn process_key_binding(key: &str, mods: &ModifiersState) -> Option<Action> {
         KEY_BINDINGS.iter().find_map(|binding| {
             binding
                 .is_triggered_by(&key, mods)
-                .then_some(binding.action)
-        })
-    }
-
-    /// Process mouse binding.
-    fn process_mouse_binding(button: MouseButton, mods: &ModifiersState) -> Option<Action> {
-        MOUSE_BINDINGS.iter().find_map(|binding| {
-            binding
-                .is_triggered_by(&button, mods)
                 .then_some(binding.action)
         })
     }
@@ -292,16 +282,6 @@ impl Application {
                 "{}{:<10} - {} ({})",
                 modifiers_to_string(binding.mods),
                 binding.trigger,
-                binding.action,
-                binding.action.help(),
-            );
-        }
-        info!("Mouse bindings:");
-        for binding in MOUSE_BINDINGS {
-            info!(
-                "{}{:<10} - {} ({})",
-                modifiers_to_string(binding.mods),
-                mouse_button_to_string(binding.trigger),
                 binding.action,
                 binding.action.help(),
             );
@@ -329,16 +309,7 @@ impl ApplicationHandler<UserEvent> for Application {
             WindowEvent::Resized(size) => {
                 window.resize(size);
             }
-            WindowEvent::Focused(focused) => {
-                if focused {
-                    info!("Window={window_id:?} focused");
-                } else {
-                    info!("Window={window_id:?} unfocused");
-                }
-            }
-            WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
-                info!("Window={window_id:?} changed scale to {scale_factor}");
-            }
+
             WindowEvent::ThemeChanged(theme) => {
                 info!("Theme changed to {theme:?}");
                 window.set_theme(theme);
@@ -359,14 +330,7 @@ impl ApplicationHandler<UserEvent> for Application {
                 window.modifiers = modifiers.state();
                 info!("Modifiers changed to {:?}", window.modifiers);
             }
-            WindowEvent::MouseWheel { delta, .. } => match delta {
-                MouseScrollDelta::LineDelta(x, y) => {
-                    info!("Mouse wheel Line Delta: ({x},{y})");
-                }
-                MouseScrollDelta::PixelDelta(px) => {
-                    info!("Mouse wheel Pixel Delta: ({},{})", px.x, px.y);
-                }
-            },
+
             WindowEvent::KeyboardInput {
                 event,
                 is_synthetic: false,
@@ -374,7 +338,6 @@ impl ApplicationHandler<UserEvent> for Application {
             } => {
                 let mods = window.modifiers;
 
-                // Dispatch actions only on press.
                 if event.state.is_pressed() {
                     let action = if let Key::Character(ch) = event.logical_key.as_ref() {
                         Self::process_key_binding(&ch.to_uppercase(), &mods)
@@ -385,16 +348,6 @@ impl ApplicationHandler<UserEvent> for Application {
                     if let Some(action) = action {
                         self.handle_action(event_loop, window_id, action);
                     }
-                }
-            }
-            WindowEvent::MouseInput { button, state, .. } => {
-                let mods = window.modifiers;
-                if let Some(action) = state
-                    .is_pressed()
-                    .then(|| Self::process_mouse_binding(button, &mods))
-                    .flatten()
-                {
-                    self.handle_action(event_loop, window_id, action);
                 }
             }
             WindowEvent::CursorLeft { .. } => {
@@ -424,42 +377,7 @@ impl ApplicationHandler<UserEvent> for Application {
                 }
                 Ime::Disabled => info!("IME disabled for Window={window_id:?}"),
             },
-            WindowEvent::PinchGesture { delta, .. } => {
-                window.zoom += delta;
-                let zoom = window.zoom;
-                if delta > 0.0 {
-                    info!("Zoomed in {delta:.5} (now: {zoom:.5})");
-                } else {
-                    info!("Zoomed out {delta:.5} (now: {zoom:.5})");
-                }
-            }
-            WindowEvent::RotationGesture { delta, .. } => {
-                window.rotated += delta;
-                let rotated = window.rotated;
-                if delta > 0.0 {
-                    info!("Rotated counterclockwise {delta:.5} (now: {rotated:.5})");
-                } else {
-                    info!("Rotated clockwise {delta:.5} (now: {rotated:.5})");
-                }
-            }
-            WindowEvent::PanGesture { delta, phase, .. } => {
-                window.panned.x += delta.x;
-                window.panned.y += delta.y;
-                info!("Panned ({delta:?})) (now: {:?}), {phase:?}", window.panned);
-            }
-            WindowEvent::DoubleTapGesture { .. } => {
-                info!("Smart zoom");
-            }
-            WindowEvent::TouchpadPressure { .. }
-            | WindowEvent::HoveredFileCancelled
-            | WindowEvent::KeyboardInput { .. }
-            | WindowEvent::CursorEntered { .. }
-            | WindowEvent::AxisMotion { .. }
-            | WindowEvent::DroppedFile(_)
-            | WindowEvent::HoveredFile(_)
-            | WindowEvent::Destroyed
-            | WindowEvent::Touch(_)
-            | WindowEvent::Moved(_) => (),
+            _ => {}
         }
     }
 
@@ -1005,17 +923,6 @@ fn modifiers_to_string(mods: ModifiersState) -> String {
     mods_line
 }
 
-fn mouse_button_to_string(button: MouseButton) -> &'static str {
-    match button {
-        MouseButton::Left => "LMB",
-        MouseButton::Right => "RMB",
-        MouseButton::Middle => "MMB",
-        MouseButton::Back => "Back",
-        MouseButton::Forward => "Forward",
-        MouseButton::Other(_) => "",
-    }
-}
-
 /// Cursor list to cycle through.
 const CURSORS: &[CursorIcon] = &[
     CursorIcon::Default,
@@ -1056,55 +963,5 @@ const CURSORS: &[CursorIcon] = &[
 
 const KEY_BINDINGS: &[Binding<&'static str>] = &[
     Binding::new("Q", ModifiersState::CONTROL, Action::CloseWindow),
-    Binding::new("H", ModifiersState::CONTROL, Action::PrintHelp),
     Binding::new("F", ModifiersState::CONTROL, Action::ToggleFullscreen),
-    Binding::new("D", ModifiersState::CONTROL, Action::ToggleDecorations),
-    Binding::new("I", ModifiersState::CONTROL, Action::ToggleImeInput),
-    Binding::new("L", ModifiersState::CONTROL, Action::CycleCursorGrab),
-    Binding::new("P", ModifiersState::CONTROL, Action::ToggleResizeIncrements),
-    Binding::new("R", ModifiersState::CONTROL, Action::ToggleResizable),
-    Binding::new("R", ModifiersState::ALT, Action::RequestResize),
-    // M.
-    Binding::new("M", ModifiersState::CONTROL, Action::ToggleMaximize),
-    Binding::new("M", ModifiersState::ALT, Action::Minimize),
-    // N.
-    Binding::new("N", ModifiersState::CONTROL, Action::CreateNewWindow),
-    // C.
-    Binding::new("C", ModifiersState::CONTROL, Action::NextCursor),
-    Binding::new("C", ModifiersState::ALT, Action::NextCustomCursor),
-    #[cfg(web_platform)]
-    Binding::new(
-        "C",
-        ModifiersState::CONTROL.union(ModifiersState::SHIFT),
-        Action::UrlCustomCursor,
-    ),
-    #[cfg(web_platform)]
-    Binding::new(
-        "C",
-        ModifiersState::ALT.union(ModifiersState::SHIFT),
-        Action::AnimationCustomCursor,
-    ),
-    Binding::new("Z", ModifiersState::CONTROL, Action::ToggleCursorVisibility),
-    #[cfg(macos_platform)]
-    Binding::new("T", ModifiersState::SUPER, Action::CreateNewTab),
-    #[cfg(macos_platform)]
-    Binding::new("O", ModifiersState::CONTROL, Action::CycleOptionAsAlt),
-];
-
-const MOUSE_BINDINGS: &[Binding<MouseButton>] = &[
-    Binding::new(
-        MouseButton::Left,
-        ModifiersState::ALT,
-        Action::DragResizeWindow,
-    ),
-    Binding::new(
-        MouseButton::Left,
-        ModifiersState::CONTROL,
-        Action::DragWindow,
-    ),
-    Binding::new(
-        MouseButton::Right,
-        ModifiersState::CONTROL,
-        Action::ShowWindowMenu,
-    ),
 ];
