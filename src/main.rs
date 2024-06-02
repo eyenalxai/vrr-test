@@ -4,10 +4,6 @@ use std::fmt::Debug;
 use winit::event_loop::EventLoop;
 
 use crate::app::Application;
-#[cfg(any(x11_platform, wayland_platform))]
-use winit::platform::startup_notify::{
-    self, EventLoopExtStartupNotify, WindowAttributesExtStartupNotify, WindowExtStartupNotify,
-};
 
 mod actions;
 mod app;
