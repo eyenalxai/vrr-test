@@ -113,20 +113,11 @@ impl Application {
         event_loop: &ActiveEventLoop,
         _tab_id: Option<String>,
     ) -> Result<WindowId, Box<dyn Error>> {
-        // TODO read-out activation token.
-
         #[allow(unused_mut)]
         let mut window_attributes = Window::default_attributes()
             .with_title("Winit window")
             .with_transparent(true)
             .with_window_icon(Some(self.icon.clone()));
-
-        #[cfg(any(x11_platform, wayland_platform))]
-        if let Some(token) = event_loop.read_token_from_env() {
-            startup_notify::reset_activation_token_env();
-            info!("Using token {:?} to activate a window", token);
-            window_attributes = window_attributes.with_activation_token(token);
-        }
 
         let window = event_loop.create_window(window_attributes)?;
 
@@ -146,13 +137,6 @@ impl Application {
                 let _ = self.windows.remove(&window_id);
             }
             Action::CreateNewWindow => {
-                #[cfg(any(x11_platform, wayland_platform))]
-                if let Err(err) = window.window.request_activation_token() {
-                    info!("Failed to get activation token: {err}");
-                } else {
-                    return;
-                }
-
                 if let Err(err) = self.create_window(event_loop, None) {
                     error!("Error creating new window: {err}");
                 }
@@ -314,15 +298,7 @@ impl ApplicationHandler<UserEvent> for Application {
                 info!("Moved cursor to {position:?}");
                 window.cursor_moved(position);
             }
-            WindowEvent::ActivationTokenDone { token: _token, .. } => {
-                #[cfg(any(x11_platform, wayland_platform))]
-                {
-                    startup_notify::set_activation_token_env(_token);
-                    if let Err(err) = self.create_window(event_loop, None) {
-                        error!("Error creating new window: {err}");
-                    }
-                }
-            }
+
             WindowEvent::Ime(event) => match event {
                 Ime::Enabled => info!("IME enabled for Window={window_id:?}"),
                 Ime::Preedit(text, caret_pos) => {
