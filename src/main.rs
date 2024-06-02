@@ -91,7 +91,7 @@ impl Application {
     ) -> Result<WindowId, Box<dyn Error>> {
         #[allow(unused_mut)]
         let mut window_attributes = Window::default_attributes()
-            .with_title("Winit window")
+            .with_title("VRR Test")
             .with_transparent(true)
             .with_window_icon(Some(self.icon.clone()));
 
