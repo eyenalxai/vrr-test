@@ -278,10 +278,6 @@ impl ApplicationHandler<UserEvent> for Application {
 
 /// State of the window.
 struct WindowState {
-    /// IME input.
-    ime: bool,
-    /// Render surface.
-    ///
     /// NOTE: This surface must be dropped before the `Window`.
     surface: Surface<DisplayHandle<'static>, Arc<Window>>,
     /// The actual winit Window.
@@ -307,15 +303,10 @@ impl WindowState {
         let named_idx = 0;
         window.set_cursor(CURSORS[named_idx]);
 
-        // Allow IME out of the box.
-        let ime = true;
-        window.set_ime_allowed(ime);
-
         let size = window.inner_size();
         let mut state = Self {
             surface,
             window,
-            ime,
             cursor_position: Default::default(),
             modifiers: Default::default(),
             occluded: Default::default(),
@@ -327,10 +318,6 @@ impl WindowState {
 
     pub fn cursor_moved(&mut self, position: PhysicalPosition<f64>) {
         self.cursor_position = Some(position);
-        if self.ime {
-            self.window
-                .set_ime_cursor_area(position, PhysicalSize::new(20, 20));
-        }
     }
 
     pub fn cursor_left(&mut self) {
