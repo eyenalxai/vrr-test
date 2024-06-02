@@ -50,10 +50,33 @@ impl WindowState {
     }
 
     pub(crate) fn toggle_fullscreen(&self) {
+        #[cfg(target_os = "linux")]
+        let fullscreen_option = Some(Fullscreen::Borderless(None));
+
+        #[cfg(target_os = "windows")]
+        let fullscreen_option = {
+            let current_monitor = self
+                .window
+                .current_monitor()
+                .expect("Failed to get current monitor");
+            let current_video_mode = current_monitor
+                .video_modes()
+                .max_by_key(|mode| {
+                    (
+                        mode.size().width,
+                        mode.size().height,
+                        mode.refresh_rate_millihertz(),
+                    )
+                })
+                .expect("Failed to get max video mode");
+
+            Some(Fullscreen::Exclusive(current_video_mode))
+        };
+
         let fullscreen = if self.window.fullscreen().is_some() {
             None
         } else {
-            Some(Fullscreen::Borderless(None))
+            fullscreen_option
         };
 
         self.window.set_fullscreen(fullscreen);
