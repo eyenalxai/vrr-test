@@ -1,5 +1,4 @@
-#[cfg(not(web_platform))]
-pub fn init() {
+pub fn init_tracing() {
     use tracing_subscriber::filter::{EnvFilter, LevelFilter};
 
     tracing_subscriber::fmt()

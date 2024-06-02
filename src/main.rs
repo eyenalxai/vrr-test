@@ -4,12 +4,12 @@ use std::fmt::Debug;
 use winit::event_loop::EventLoop;
 
 use crate::app::Application;
+use crate::tracing::init_tracing;
 
 mod actions;
 mod app;
 mod bindings;
 mod event_handling;
-#[path = "tracing.rs"]
 mod tracing;
 mod utils;
 mod window_state;
@@ -21,7 +21,7 @@ enum UserEvent {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    tracing::init();
+    init_tracing();
 
     let event_loop = EventLoop::<UserEvent>::with_user_event().build()?;
     let _event_loop_proxy = event_loop.create_proxy();
