@@ -23,8 +23,6 @@ use winit::window::{
     Theme, Window, WindowId,
 };
 
-#[cfg(macos_platform)]
-use winit::platform::macos::{OptionAsAlt, WindowAttributesExtMacOS, WindowExtMacOS};
 #[cfg(any(x11_platform, wayland_platform))]
 use winit::platform::startup_notify::{
     self, EventLoopExtStartupNotify, WindowAttributesExtStartupNotify, WindowExtStartupNotify,
@@ -38,16 +36,12 @@ mod tracing;
 const BORDER_SIZE: f64 = 20.;
 
 fn main() -> Result<(), Box<dyn Error>> {
-    #[cfg(web_platform)]
-    console_error_panic_hook::set_once();
-
     tracing::init();
 
     let event_loop = EventLoop::<UserEvent>::with_user_event().build()?;
     let _event_loop_proxy = event_loop.create_proxy();
 
     // Wire the user event from another thread.
-    #[cfg(not(web_platform))]
     std::thread::spawn(move || {
         // Wake up the `event_loop` once every second and dispatch a custom event
         // from a different thread.
@@ -139,17 +133,6 @@ impl Application {
             window_attributes = window_attributes.with_activation_token(token);
         }
 
-        #[cfg(macos_platform)]
-        if let Some(tab_id) = _tab_id {
-            window_attributes = window_attributes.with_tabbing_identifier(&tab_id);
-        }
-
-        #[cfg(web_platform)]
-        {
-            use winit::platform::web::WindowAttributesExtWebSys;
-            window_attributes = window_attributes.with_append(true);
-        }
-
         let window = event_loop.create_window(window_attributes)?;
 
         #[cfg(ios_platform)]
@@ -198,26 +181,13 @@ impl Application {
             Action::Minimize => window.minimize(),
             Action::NextCursor => window.next_cursor(),
             Action::NextCustomCursor => window.next_custom_cursor(&self.custom_cursors),
-            #[cfg(web_platform)]
-            Action::UrlCustomCursor => window.url_custom_cursor(event_loop),
-            #[cfg(web_platform)]
-            Action::AnimationCustomCursor => {
-                window.animation_custom_cursor(event_loop, &self.custom_cursors)
-            }
+
             Action::CycleCursorGrab => window.cycle_cursor_grab(),
             Action::DragWindow => window.drag_window(),
             Action::DragResizeWindow => window.drag_resize_window(),
             Action::ShowWindowMenu => window.show_menu(),
             Action::PrintHelp => self.print_help(),
-            #[cfg(macos_platform)]
-            Action::CycleOptionAsAlt => window.cycle_option_as_alt(),
-            #[cfg(macos_platform)]
-            Action::CreateNewTab => {
-                let tab_id = window.window.tabbing_identifier();
-                if let Err(err) = self.create_window(event_loop, Some(tab_id)) {
-                    error!("Error creating new window: {err}");
-                }
-            }
+
             Action::RequestResize => window.swap_dimensions(),
         }
     }
@@ -443,9 +413,6 @@ struct WindowState {
     /// The amount of pan of the window.
     panned: PhysicalPosition<f32>,
 
-    #[cfg(macos_platform)]
-    option_as_alt: OptionAsAlt,
-
     // Cursor states.
     named_idx: usize,
     custom_idx: usize,
@@ -472,8 +439,6 @@ impl WindowState {
 
         let size = window.inner_size();
         let mut state = Self {
-            #[cfg(macos_platform)]
-            option_as_alt: window.option_as_alt(),
             custom_idx: app.custom_cursors.len() - 1,
             cursor_grab: CursorGrabMode::None,
             named_idx,
@@ -578,18 +543,6 @@ impl WindowState {
         }
     }
 
-    #[cfg(macos_platform)]
-    fn cycle_option_as_alt(&mut self) {
-        self.option_as_alt = match self.option_as_alt {
-            OptionAsAlt::None => OptionAsAlt::OnlyLeft,
-            OptionAsAlt::OnlyLeft => OptionAsAlt::OnlyRight,
-            OptionAsAlt::OnlyRight => OptionAsAlt::Both,
-            OptionAsAlt::Both => OptionAsAlt::None,
-        };
-        info!("Setting option as alt {:?}", self.option_as_alt);
-        self.window.set_option_as_alt(self.option_as_alt);
-    }
-
     /// Swap the window dimensions with `request_inner_size`.
     fn swap_dimensions(&mut self) {
         let old_inner_size = self.window.inner_size();
@@ -621,35 +574,6 @@ impl WindowState {
     fn next_custom_cursor(&mut self, custom_cursors: &[CustomCursor]) {
         self.custom_idx = (self.custom_idx + 1) % custom_cursors.len();
         let cursor = Cursor::Custom(custom_cursors[self.custom_idx].clone());
-        self.window.set_cursor(cursor);
-    }
-
-    /// Custom cursor from an URL.
-    #[cfg(web_platform)]
-    fn url_custom_cursor(&mut self, event_loop: &ActiveEventLoop) {
-        let cursor = event_loop.create_custom_cursor(url_custom_cursor());
-
-        self.window.set_cursor(cursor);
-    }
-
-    /// Custom cursor from a URL.
-    #[cfg(web_platform)]
-    fn animation_custom_cursor(
-        &mut self,
-        event_loop: &ActiveEventLoop,
-        custom_cursors: &[CustomCursor],
-    ) {
-        use std::time::Duration;
-        use winit::platform::web::CustomCursorExtWebSys;
-
-        let cursors = vec![
-            custom_cursors[0].clone(),
-            custom_cursors[1].clone(),
-            event_loop.create_custom_cursor(url_custom_cursor()),
-        ];
-        let cursor = CustomCursor::from_animation(Duration::from_secs(3), cursors).unwrap();
-        let cursor = event_loop.create_custom_cursor(cursor);
-
         self.window.set_cursor(cursor);
     }
 
@@ -814,19 +738,13 @@ enum Action {
     Minimize,
     NextCursor,
     NextCustomCursor,
-    #[cfg(web_platform)]
-    UrlCustomCursor,
-    #[cfg(web_platform)]
-    AnimationCustomCursor,
+
     CycleCursorGrab,
     PrintHelp,
     DragWindow,
     DragResizeWindow,
     ShowWindowMenu,
-    #[cfg(macos_platform)]
-    CycleOptionAsAlt,
-    #[cfg(macos_platform)]
-    CreateNewTab,
+
     RequestResize,
 }
 
@@ -845,19 +763,13 @@ impl Action {
             Action::ToggleResizeIncrements => "Use resize increments when resizing window",
             Action::NextCursor => "Advance the cursor to the next value",
             Action::NextCustomCursor => "Advance custom cursor to the next value",
-            #[cfg(web_platform)]
-            Action::UrlCustomCursor => "Custom cursor from an URL",
-            #[cfg(web_platform)]
-            Action::AnimationCustomCursor => "Custom cursor from an animation",
+
             Action::CycleCursorGrab => "Cycle through cursor grab mode",
             Action::PrintHelp => "Print help",
             Action::DragWindow => "Start window drag",
             Action::DragResizeWindow => "Start window drag-resize",
             Action::ShowWindowMenu => "Show window menu",
-            #[cfg(macos_platform)]
-            Action::CycleOptionAsAlt => "Cycle option as alt mode",
-            #[cfg(macos_platform)]
-            Action::CreateNewTab => "Create new tab",
+
             Action::RequestResize => "Request a resize",
         }
     }
@@ -875,24 +787,6 @@ fn decode_cursor(bytes: &[u8]) -> CustomCursorSource {
     let (_, w, h) = samples.extents();
     let (w, h) = (w as u16, h as u16);
     CustomCursor::from_rgba(samples.samples, w, h, w / 2, h / 2).unwrap()
-}
-
-#[cfg(web_platform)]
-fn url_custom_cursor() -> CustomCursorSource {
-    use std::sync::atomic::{AtomicU64, Ordering};
-
-    use winit::platform::web::CustomCursorExtWebSys;
-
-    static URL_COUNTER: AtomicU64 = AtomicU64::new(0);
-
-    CustomCursor::from_url(
-        format!(
-            "https://picsum.photos/128?random={}",
-            URL_COUNTER.fetch_add(1, Ordering::Relaxed)
-        ),
-        64,
-        64,
-    )
 }
 
 fn load_icon(bytes: &[u8]) -> Icon {
