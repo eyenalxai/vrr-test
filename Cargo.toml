@@ -1,0 +1,16 @@
+[package]
+name = "vrr-test"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+cursor-icon = "1.1.0"
+image = "0.25.1"
+softbuffer = "0.4.3"
+tracing = "0.1.40"
+tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
+winit = { version = "0.30.0", features = ["rwh_06"] }
+
+r
