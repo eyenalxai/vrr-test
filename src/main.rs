@@ -1,5 +1,3 @@
-//! Simple winit application.
-
 use std::collections::HashMap;
 use std::error::Error;
 use std::fmt::Debug;
@@ -12,14 +10,11 @@ use cursor_icon::CursorIcon;
 use softbuffer::{Context, Surface};
 
 use winit::application::ApplicationHandler;
-use winit::dpi::{LogicalSize, PhysicalPosition, PhysicalSize};
-use winit::event::{DeviceEvent, DeviceId, Ime, WindowEvent};
+use winit::dpi::{PhysicalPosition, PhysicalSize};
+use winit::event::{DeviceEvent, DeviceId, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::keyboard::{Key, ModifiersState};
-use winit::window::{
-    Cursor, CursorGrabMode, CustomCursor, CustomCursorSource, Fullscreen, Icon, ResizeDirection,
-    Theme, Window, WindowId,
-};
+use winit::window::{Fullscreen, Icon, Window, WindowId};
 
 #[cfg(any(x11_platform, wayland_platform))]
 use winit::platform::startup_notify::{
@@ -29,9 +24,6 @@ use winit::raw_window_handle::{DisplayHandle, HasDisplayHandle};
 
 #[path = "tracing.rs"]
 mod tracing;
-
-/// The amount of points to around the window for drag resize direction calculations.
-const BORDER_SIZE: f64 = 20.;
 
 fn main() -> Result<(), Box<dyn Error>> {
     tracing::init();
@@ -43,7 +35,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     std::thread::spawn(move || {
         // Wake up the `event_loop` once every second and dispatch a custom event
         // from a different thread.
-        info!("Starting to send user event every second");
         loop {
             let _ = _event_loop_proxy.send_event(UserEvent::WakeUp);
             std::thread::sleep(std::time::Duration::from_secs(1));
@@ -61,16 +52,9 @@ enum UserEvent {
     WakeUp,
 }
 
-/// Application state and event handling.
 struct Application {
-    /// Custom cursors assets.
-    custom_cursors: Vec<CustomCursor>,
-    /// Application icon.
     icon: Icon,
     windows: HashMap<WindowId, WindowState>,
-    /// Drawing context.
-    ///
-    /// With OpenGL it could be EGLDisplay.
     context: Option<Context<DisplayHandle<'static>>>,
 }
 
@@ -93,16 +77,8 @@ impl Application {
         // WM.
         let icon = load_icon(include_bytes!("data/icon.png"));
 
-        info!("Loading cursor assets");
-        let custom_cursors = vec![
-            event_loop.create_custom_cursor(decode_cursor(include_bytes!("data/cross.png"))),
-            event_loop.create_custom_cursor(decode_cursor(include_bytes!("data/cross2.png"))),
-            event_loop.create_custom_cursor(decode_cursor(include_bytes!("data/gradient.png"))),
-        ];
-
         Self {
             context,
-            custom_cursors,
             icon,
             windows: Default::default(),
         }
@@ -128,7 +104,7 @@ impl Application {
         Ok(window_id)
     }
 
-    fn handle_action(&mut self, event_loop: &ActiveEventLoop, window_id: WindowId, action: Action) {
+    fn handle_action(&mut self, window_id: WindowId, action: Action) {
         // let cursor_position = self.cursor_position;
         let window = self.windows.get_mut(&window_id).unwrap();
         info!("Executing action: {action:?}");
@@ -136,29 +112,7 @@ impl Application {
             Action::CloseWindow => {
                 let _ = self.windows.remove(&window_id);
             }
-            Action::CreateNewWindow => {
-                if let Err(err) = self.create_window(event_loop, None) {
-                    error!("Error creating new window: {err}");
-                }
-            }
-            Action::ToggleResizeIncrements => window.toggle_resize_increments(),
-            Action::ToggleCursorVisibility => window.toggle_cursor_visibility(),
-            Action::ToggleResizable => window.toggle_resizable(),
-            Action::ToggleDecorations => window.toggle_decorations(),
             Action::ToggleFullscreen => window.toggle_fullscreen(),
-            Action::ToggleMaximize => window.toggle_maximize(),
-            Action::ToggleImeInput => window.toggle_ime(),
-            Action::Minimize => window.minimize(),
-            Action::NextCursor => window.next_cursor(),
-            Action::NextCustomCursor => window.next_custom_cursor(&self.custom_cursors),
-
-            Action::CycleCursorGrab => window.cycle_cursor_grab(),
-            Action::DragWindow => window.drag_window(),
-            Action::DragResizeWindow => window.drag_resize_window(),
-            Action::ShowWindowMenu => window.show_menu(),
-            Action::PrintHelp => self.print_help(),
-
-            Action::RequestResize => window.swap_dimensions(),
         }
     }
 
@@ -230,13 +184,21 @@ impl Application {
 }
 
 impl ApplicationHandler<UserEvent> for Application {
-    fn user_event(&mut self, _event_loop: &ActiveEventLoop, event: UserEvent) {
-        info!("User event: {event:?}");
+    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+        self.dump_monitors(event_loop);
+
+        // Create initial window.
+        self.create_window(event_loop, None)
+            .expect("failed to create initial window");
+
+        self.print_help();
     }
+
+    fn user_event(&mut self, _event_loop: &ActiveEventLoop, _event: UserEvent) {}
 
     fn window_event(
         &mut self,
-        event_loop: &ActiveEventLoop,
+        _event_loop: &ActiveEventLoop,
         window_id: WindowId,
         event: WindowEvent,
     ) {
@@ -250,10 +212,6 @@ impl ApplicationHandler<UserEvent> for Application {
                 window.resize(size);
             }
 
-            WindowEvent::ThemeChanged(theme) => {
-                info!("Theme changed to {theme:?}");
-                window.set_theme(theme);
-            }
             WindowEvent::RedrawRequested => {
                 if let Err(err) = window.draw() {
                     error!("Error drawing window: {err}");
@@ -263,12 +221,10 @@ impl ApplicationHandler<UserEvent> for Application {
                 window.set_occluded(occluded);
             }
             WindowEvent::CloseRequested => {
-                info!("Closing Window={window_id:?}");
                 self.windows.remove(&window_id);
             }
             WindowEvent::ModifiersChanged(modifiers) => {
                 window.modifiers = modifiers.state();
-                info!("Modifiers changed to {:?}", window.modifiers);
             }
 
             WindowEvent::KeyboardInput {
@@ -286,29 +242,16 @@ impl ApplicationHandler<UserEvent> for Application {
                     };
 
                     if let Some(action) = action {
-                        self.handle_action(event_loop, window_id, action);
+                        self.handle_action(window_id, action);
                     }
                 }
             }
             WindowEvent::CursorLeft { .. } => {
-                info!("Cursor left Window={window_id:?}");
                 window.cursor_left();
             }
             WindowEvent::CursorMoved { position, .. } => {
-                info!("Moved cursor to {position:?}");
                 window.cursor_moved(position);
             }
-
-            WindowEvent::Ime(event) => match event {
-                Ime::Enabled => info!("IME enabled for Window={window_id:?}"),
-                Ime::Preedit(text, caret_pos) => {
-                    info!("Preedit: {}, with caret at {:?}", text, caret_pos);
-                }
-                Ime::Commit(text) => {
-                    info!("Committed: {}", text);
-                }
-                Ime::Disabled => info!("IME disabled for Window={window_id:?}"),
-            },
             _ => {}
         }
     }
@@ -316,26 +259,13 @@ impl ApplicationHandler<UserEvent> for Application {
     fn device_event(
         &mut self,
         _event_loop: &ActiveEventLoop,
-        device_id: DeviceId,
-        event: DeviceEvent,
+        _device_id: DeviceId,
+        _event: DeviceEvent,
     ) {
-        info!("Device {device_id:?} event: {event:?}");
-    }
-
-    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        info!("Resumed the event loop");
-        self.dump_monitors(event_loop);
-
-        // Create initial window.
-        self.create_window(event_loop, None)
-            .expect("failed to create initial window");
-
-        self.print_help();
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
         if self.windows.is_empty() {
-            info!("No windows left, exiting...");
             event_loop.exit();
         }
     }
@@ -357,38 +287,23 @@ struct WindowState {
     /// The actual winit Window.
     window: Arc<Window>,
     /// The window theme we're drawing with.
-    theme: Theme,
     /// Cursor position over the window.
     cursor_position: Option<PhysicalPosition<f64>>,
     /// Window modifiers state.
     modifiers: ModifiersState,
     /// Occlusion state of the window.
     occluded: bool,
-    /// Current cursor grab mode.
-    cursor_grab: CursorGrabMode,
-    /// The amount of zoom into window.
-    zoom: f64,
-    /// The amount of rotation of the window.
-    rotated: f32,
-    /// The amount of pan of the window.
-    panned: PhysicalPosition<f32>,
-
-    // Cursor states.
-    named_idx: usize,
-    custom_idx: usize,
-    cursor_hidden: bool,
 }
 
 impl WindowState {
     fn new(app: &Application, window: Window) -> Result<Self, Box<dyn Error>> {
         let window = Arc::new(window);
+        window.set_cursor_visible(false);
 
         // SAFETY: the surface is dropped before the `window` which provided it with handle, thus
         // it doesn't outlive it.
         let surface = Surface::new(app.context.as_ref().unwrap(), Arc::clone(&window))?;
 
-        let theme = window.theme().unwrap_or(Theme::Dark);
-        info!("Theme: {theme:?}");
         let named_idx = 0;
         window.set_cursor(CURSORS[named_idx]);
 
@@ -398,37 +313,16 @@ impl WindowState {
 
         let size = window.inner_size();
         let mut state = Self {
-            custom_idx: app.custom_cursors.len() - 1,
-            cursor_grab: CursorGrabMode::None,
-            named_idx,
             surface,
             window,
-            theme,
             ime,
             cursor_position: Default::default(),
-            cursor_hidden: Default::default(),
             modifiers: Default::default(),
             occluded: Default::default(),
-            rotated: Default::default(),
-            panned: Default::default(),
-            zoom: Default::default(),
         };
 
         state.resize(size);
         Ok(state)
-    }
-
-    pub fn toggle_ime(&mut self) {
-        self.ime = !self.ime;
-        self.window.set_ime_allowed(self.ime);
-        if let Some(position) = self.ime.then_some(self.cursor_position).flatten() {
-            self.window
-                .set_ime_cursor_area(position, PhysicalSize::new(20, 20));
-        }
-    }
-
-    pub fn minimize(&mut self) {
-        self.window.set_minimized(true);
     }
 
     pub fn cursor_moved(&mut self, position: PhysicalPosition<f64>) {
@@ -443,40 +337,6 @@ impl WindowState {
         self.cursor_position = None;
     }
 
-    /// Toggle maximized.
-    fn toggle_maximize(&self) {
-        let maximized = self.window.is_maximized();
-        self.window.set_maximized(!maximized);
-    }
-
-    /// Toggle window decorations.
-    fn toggle_decorations(&self) {
-        let decorated = self.window.is_decorated();
-        self.window.set_decorations(!decorated);
-    }
-
-    /// Toggle window resizable state.
-    fn toggle_resizable(&self) {
-        let resizable = self.window.is_resizable();
-        self.window.set_resizable(!resizable);
-    }
-
-    /// Toggle cursor visibility
-    fn toggle_cursor_visibility(&mut self) {
-        self.cursor_hidden = !self.cursor_hidden;
-        self.window.set_cursor_visible(!self.cursor_hidden);
-    }
-
-    /// Toggle resize increments on a window.
-    fn toggle_resize_increments(&mut self) {
-        let new_increments = match self.window.resize_increments() {
-            Some(_) => None,
-            None => Some(LogicalSize::new(25.0, 25.0)),
-        };
-        info!("Had increments: {}", new_increments.is_none());
-        self.window.set_resize_increments(new_increments);
-    }
-
     /// Toggle fullscreen.
     fn toggle_fullscreen(&self) {
         let fullscreen = if self.window.fullscreen().is_some() {
@@ -488,56 +348,8 @@ impl WindowState {
         self.window.set_fullscreen(fullscreen);
     }
 
-    /// Cycle through the grab modes ignoring errors.
-    fn cycle_cursor_grab(&mut self) {
-        self.cursor_grab = match self.cursor_grab {
-            CursorGrabMode::None => CursorGrabMode::Confined,
-            CursorGrabMode::Confined => CursorGrabMode::Locked,
-            CursorGrabMode::Locked => CursorGrabMode::None,
-        };
-        info!("Changing cursor grab mode to {:?}", self.cursor_grab);
-        if let Err(err) = self.window.set_cursor_grab(self.cursor_grab) {
-            error!("Error setting cursor grab: {err}");
-        }
-    }
-
-    /// Swap the window dimensions with `request_inner_size`.
-    fn swap_dimensions(&mut self) {
-        let old_inner_size = self.window.inner_size();
-        let mut inner_size = old_inner_size;
-
-        mem::swap(&mut inner_size.width, &mut inner_size.height);
-        info!("Requesting resize from {old_inner_size:?} to {inner_size:?}");
-
-        if let Some(new_inner_size) = self.window.request_inner_size(inner_size) {
-            if old_inner_size == new_inner_size {
-                info!("Inner size change got ignored");
-            } else {
-                self.resize(new_inner_size);
-            }
-        } else {
-            info!("Request inner size is asynchronous");
-        }
-    }
-
-    /// Pick the next cursor.
-    fn next_cursor(&mut self) {
-        self.named_idx = (self.named_idx + 1) % CURSORS.len();
-        info!("Setting cursor to \"{:?}\"", CURSORS[self.named_idx]);
-        self.window
-            .set_cursor(Cursor::Icon(CURSORS[self.named_idx]));
-    }
-
-    /// Pick the next custom cursor.
-    fn next_custom_cursor(&mut self, custom_cursors: &[CustomCursor]) {
-        self.custom_idx = (self.custom_idx + 1) % custom_cursors.len();
-        let cursor = Cursor::Custom(custom_cursors[self.custom_idx].clone());
-        self.window.set_cursor(cursor);
-    }
-
     /// Resize the window to the new size.
     fn resize(&mut self, size: PhysicalSize<u32>) {
-        info!("Resized to {size:?}");
         {
             let (width, height) = match (NonZeroU32::new(size.width), NonZeroU32::new(size.height))
             {
@@ -549,78 +361,6 @@ impl WindowState {
                 .expect("failed to resize inner buffer");
         }
         self.window.request_redraw();
-    }
-
-    /// Change the theme.
-    fn set_theme(&mut self, theme: Theme) {
-        self.theme = theme;
-        self.window.request_redraw();
-    }
-
-    /// Show window menu.
-    fn show_menu(&self) {
-        if let Some(position) = self.cursor_position {
-            self.window.show_window_menu(position);
-        }
-    }
-
-    /// Drag the window.
-    fn drag_window(&self) {
-        if let Err(err) = self.window.drag_window() {
-            info!("Error starting window drag: {err}");
-        } else {
-            info!("Dragging window Window={:?}", self.window.id());
-        }
-    }
-
-    /// Drag-resize the window.
-    fn drag_resize_window(&self) {
-        let position = match self.cursor_position {
-            Some(position) => position,
-            None => {
-                info!("Drag-resize requires cursor to be inside the window");
-                return;
-            }
-        };
-
-        let win_size = self.window.inner_size();
-        let border_size = BORDER_SIZE * self.window.scale_factor();
-
-        let x_direction = if position.x < border_size {
-            ResizeDirection::West
-        } else if position.x > (win_size.width as f64 - border_size) {
-            ResizeDirection::East
-        } else {
-            // Use arbitrary direction instead of None for simplicity.
-            ResizeDirection::SouthEast
-        };
-
-        let y_direction = if position.y < border_size {
-            ResizeDirection::North
-        } else if position.y > (win_size.height as f64 - border_size) {
-            ResizeDirection::South
-        } else {
-            // Use arbitrary direction instead of None for simplicity.
-            ResizeDirection::SouthEast
-        };
-
-        let direction = match (x_direction, y_direction) {
-            (ResizeDirection::West, ResizeDirection::North) => ResizeDirection::NorthWest,
-            (ResizeDirection::West, ResizeDirection::South) => ResizeDirection::SouthWest,
-            (ResizeDirection::West, _) => ResizeDirection::West,
-            (ResizeDirection::East, ResizeDirection::North) => ResizeDirection::NorthEast,
-            (ResizeDirection::East, ResizeDirection::South) => ResizeDirection::SouthEast,
-            (ResizeDirection::East, _) => ResizeDirection::East,
-            (_, ResizeDirection::South) => ResizeDirection::South,
-            (_, ResizeDirection::North) => ResizeDirection::North,
-            _ => return,
-        };
-
-        if let Err(err) = self.window.drag_resize_window(direction) {
-            info!("Error starting window drag-resize: {err}");
-        } else {
-            info!("Drag-resizing window Window={:?}", self.window.id());
-        }
     }
 
     /// Change window occlusion state.
@@ -638,16 +378,7 @@ impl WindowState {
             return Ok(());
         }
 
-        const WHITE: u32 = 0xffffffff;
-        const DARK_GRAY: u32 = 0xff181818;
-
-        let color = match self.theme {
-            Theme::Light => WHITE,
-            Theme::Dark => DARK_GRAY,
-        };
-
-        let mut buffer = self.surface.buffer_mut()?;
-        buffer.fill(color);
+        let buffer = self.surface.buffer_mut()?;
         self.window.pre_present_notify();
         buffer.present()?;
         Ok(())
@@ -677,50 +408,14 @@ impl<T: Eq> Binding<T> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Action {
     CloseWindow,
-    ToggleCursorVisibility,
-    CreateNewWindow,
-    ToggleResizeIncrements,
-    ToggleImeInput,
-    ToggleDecorations,
-    ToggleResizable,
     ToggleFullscreen,
-    ToggleMaximize,
-    Minimize,
-    NextCursor,
-    NextCustomCursor,
-
-    CycleCursorGrab,
-    PrintHelp,
-    DragWindow,
-    DragResizeWindow,
-    ShowWindowMenu,
-
-    RequestResize,
 }
 
 impl Action {
     fn help(&self) -> &'static str {
         match self {
             Action::CloseWindow => "Close window",
-            Action::ToggleCursorVisibility => "Hide cursor",
-            Action::CreateNewWindow => "Create new window",
-            Action::ToggleImeInput => "Toggle IME input",
-            Action::ToggleDecorations => "Toggle decorations",
-            Action::ToggleResizable => "Toggle window resizable state",
             Action::ToggleFullscreen => "Toggle fullscreen",
-            Action::ToggleMaximize => "Maximize",
-            Action::Minimize => "Minimize",
-            Action::ToggleResizeIncrements => "Use resize increments when resizing window",
-            Action::NextCursor => "Advance the cursor to the next value",
-            Action::NextCustomCursor => "Advance custom cursor to the next value",
-
-            Action::CycleCursorGrab => "Cycle through cursor grab mode",
-            Action::PrintHelp => "Print help",
-            Action::DragWindow => "Start window drag",
-            Action::DragResizeWindow => "Start window drag-resize",
-            Action::ShowWindowMenu => "Show window menu",
-
-            Action::RequestResize => "Request a resize",
         }
     }
 }
@@ -729,14 +424,6 @@ impl fmt::Display for Action {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         Debug::fmt(&self, f)
     }
-}
-
-fn decode_cursor(bytes: &[u8]) -> CustomCursorSource {
-    let img = image::load_from_memory(bytes).unwrap().to_rgba8();
-    let samples = img.into_flat_samples();
-    let (_, w, h) = samples.extents();
-    let (w, h) = (w as u16, h as u16);
-    CustomCursor::from_rgba(samples.samples, w, h, w / 2, h / 2).unwrap()
 }
 
 fn load_icon(bytes: &[u8]) -> Icon {
