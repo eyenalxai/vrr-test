@@ -9,7 +9,6 @@ use winit::dpi::{PhysicalPosition, PhysicalSize};
 use winit::keyboard::ModifiersState;
 use winit::raw_window_handle::DisplayHandle;
 use winit::window::{Fullscreen, Window};
-
 pub struct WindowState {
     surface: Surface<DisplayHandle<'static>, Arc<Window>>,
     pub(crate) window: Arc<Window>,
@@ -74,8 +73,22 @@ impl WindowState {
         };
 
         let fullscreen = if self.window.fullscreen().is_some() {
+            info!("Exiting fullscreen");
             None
         } else {
+            #[cfg(target_os = "windows")]
+            if let Some(Fullscreen::Exclusive(video_mode)) = &fullscreen_option {
+                let mode = video_mode.size();
+                let refresh_rate = video_mode.refresh_rate_millihertz() / 1000; // Convert millihertz to hertz
+                info!(
+                    "Entering fullscreen: {}x{}@{}Hz",
+                    mode.width, mode.height, refresh_rate
+                );
+            }
+            #[cfg(target_os = "linux")]
+            {
+                info!("Entering fullscreen: Borderless");
+            }
             fullscreen_option
         };
 
