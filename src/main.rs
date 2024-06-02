@@ -105,7 +105,6 @@ impl Application {
     }
 
     fn handle_action(&mut self, window_id: WindowId, action: Action) {
-        // let cursor_position = self.cursor_position;
         let window = self.windows.get_mut(&window_id).unwrap();
         info!("Executing action: {action:?}");
         match action {
@@ -187,7 +186,6 @@ impl ApplicationHandler<UserEvent> for Application {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         self.dump_monitors(event_loop);
 
-        // Create initial window.
         self.create_window(event_loop, None)
             .expect("failed to create initial window");
 
@@ -271,23 +269,16 @@ impl ApplicationHandler<UserEvent> for Application {
     }
 
     fn exiting(&mut self, _event_loop: &ActiveEventLoop) {
-        // We must drop the context here.
         self.context = None;
     }
 }
 
-/// State of the window.
 struct WindowState {
-    /// NOTE: This surface must be dropped before the `Window`.
     surface: Surface<DisplayHandle<'static>, Arc<Window>>,
-    /// The actual winit Window.
     window: Arc<Window>,
-    /// The window theme we're drawing with.
-    /// Cursor position over the window.
+
     cursor_position: Option<PhysicalPosition<f64>>,
-    /// Window modifiers state.
     modifiers: ModifiersState,
-    /// Occlusion state of the window.
     occluded: bool,
 }
 
@@ -296,12 +287,9 @@ impl WindowState {
         let window = Arc::new(window);
         window.set_cursor_visible(false);
 
-        // SAFETY: the surface is dropped before the `window` which provided it with handle, thus
-        // it doesn't outlive it.
         let surface = Surface::new(app.context.as_ref().unwrap(), Arc::clone(&window))?;
 
-        let named_idx = 0;
-        window.set_cursor(CURSORS[named_idx]);
+        window.set_cursor(CursorIcon::Default);
 
         let size = window.inner_size();
         let mut state = Self {
@@ -324,7 +312,6 @@ impl WindowState {
         self.cursor_position = None;
     }
 
-    /// Toggle fullscreen.
     fn toggle_fullscreen(&self) {
         let fullscreen = if self.window.fullscreen().is_some() {
             None
@@ -335,7 +322,6 @@ impl WindowState {
         self.window.set_fullscreen(fullscreen);
     }
 
-    /// Resize the window to the new size.
     fn resize(&mut self, size: PhysicalSize<u32>) {
         {
             let (width, height) = match (NonZeroU32::new(size.width), NonZeroU32::new(size.height))
@@ -350,7 +336,6 @@ impl WindowState {
         self.window.request_redraw();
     }
 
-    /// Change window occlusion state.
     fn set_occluded(&mut self, occluded: bool) {
         self.occluded = occluded;
         if !occluded {
@@ -358,7 +343,6 @@ impl WindowState {
         }
     }
 
-    /// Draw the window contents.
     fn draw(&mut self) -> Result<(), Box<dyn Error>> {
         if self.occluded {
             info!("Skipping drawing occluded window={:?}", self.window.id());
@@ -440,44 +424,6 @@ fn modifiers_to_string(mods: ModifiersState) -> String {
     }
     mods_line
 }
-
-/// Cursor list to cycle through.
-const CURSORS: &[CursorIcon] = &[
-    CursorIcon::Default,
-    CursorIcon::Crosshair,
-    CursorIcon::Pointer,
-    CursorIcon::Move,
-    CursorIcon::Text,
-    CursorIcon::Wait,
-    CursorIcon::Help,
-    CursorIcon::Progress,
-    CursorIcon::NotAllowed,
-    CursorIcon::ContextMenu,
-    CursorIcon::Cell,
-    CursorIcon::VerticalText,
-    CursorIcon::Alias,
-    CursorIcon::Copy,
-    CursorIcon::NoDrop,
-    CursorIcon::Grab,
-    CursorIcon::Grabbing,
-    CursorIcon::AllScroll,
-    CursorIcon::ZoomIn,
-    CursorIcon::ZoomOut,
-    CursorIcon::EResize,
-    CursorIcon::NResize,
-    CursorIcon::NeResize,
-    CursorIcon::NwResize,
-    CursorIcon::SResize,
-    CursorIcon::SeResize,
-    CursorIcon::SwResize,
-    CursorIcon::WResize,
-    CursorIcon::EwResize,
-    CursorIcon::NsResize,
-    CursorIcon::NeswResize,
-    CursorIcon::NwseResize,
-    CursorIcon::ColResize,
-    CursorIcon::RowResize,
-];
 
 const KEY_BINDINGS: &[Binding<&'static str>] = &[
     Binding::new("Q", ModifiersState::CONTROL, Action::CloseWindow),
