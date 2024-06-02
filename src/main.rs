@@ -410,12 +410,7 @@ fn load_icon(bytes: &[u8]) -> Icon {
 fn modifiers_to_string(mods: ModifiersState) -> String {
     let mut mods_line = String::new();
     // Always add + since it's printed as a part of the bindings.
-    for (modifier, desc) in [
-        (ModifiersState::SUPER, "Super+"),
-        (ModifiersState::ALT, "Alt+"),
-        (ModifiersState::CONTROL, "Ctrl+"),
-        (ModifiersState::SHIFT, "Shift+"),
-    ] {
+    for (modifier, desc) in [(ModifiersState::CONTROL, "Ctrl+")] {
         if !mods.contains(modifier) {
             continue;
         }
